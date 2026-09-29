@@ -1,0 +1,4 @@
+*.Rmd linguist-detectable=true
+*.Rmd linguist-language=R
+*.Rproj linguist-detectable=true
+*.Rproj linguist-language=R
