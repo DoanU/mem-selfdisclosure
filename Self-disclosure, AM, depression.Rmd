@@ -1,0 +1,1081 @@
+---
+title: "Self-disclosure mediates AM and depression - Data Analysis"
+author: "Uyen Doan"
+date: "29/11/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+#Set-up
+
+```{r}
+#here::i_am()
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(haven)
+library(psych)
+library(dplyr)
+library(foreign)
+library(ggplot2)
+library(Hmisc)
+library(nortest)
+library(naniar)
+library(mice)
+library(miceadds)
+library(VIM)
+library(lavaan)
+library(lattice)
+library(mitml)
+library(readr)
+d_full <- read_sav("Hitchcock_16June2022.sav")
+d_add <- read_sav("B3980_Hitchcock_23June2023.sav")
+source("process.R")
+
+options(scipen = 999)
+```
+
+```{r create data frame, include=FALSE}
+d1 <- d_add %>% select (c(cidB3980, kz021, c800, f8ws112, c645, r9020, matdep_recurrent, pq1010, pq1011, a_happ_5g, b_bore_5g, c_reli_5g, d_hope_5g, e_exci_5g, f_fail_5g, g_lone_5g, h_sad_5g, i_luck_5g, j_rela_5g, ccr500, ccr501, ccr502, ccr510, ccr511, ccr512, ccr520, ccr521, ccr522, ccr523, ccr530, ccr531, ccr532, ccr533, ccr534, ccr535, ccr540, ccr550, ccs4500, ccs4502, ccs4503, ccs4504, ccs4505, ccs4506, ccs4508, ccs4509, ccs4511, ccs4512, ccs4513, ccs4514, ccs4515, ff6500, ff6502, ff6503, ff6504, ff6505, ff6506, ff6508, ff6509, ff6511, ff6512, ff6513, ff6514, ff6515, ccs6530, ccs6590, ccs6600, ccs6610, ccs6620, tb7030, tb7031, tb7032, tb7033, tb7034, tb7035, tb7036, tb7037, tb7038, tb7039, tb7040, tb7041, tb7042))
+
+d1<- rename(d1, Sex = kz021)
+d1<- rename(d1, Ethnicity = c800)
+d1<- rename(d1, IQ = f8ws112)
+d1<- rename(d1, WeeklyIncome = r9020)
+d1<- rename(d1, MumEd = c645)
+d1<- rename(d1, MatDep = matdep_recurrent)
+d1<- rename(d1, PartnerDep = pq1011)
+
+d <- d1 %>% mutate_at(c('cidB3980', #ID
+                        'IQ',
+                        #mem spec
+                        'a_happ_5g', 'b_bore_5g','c_reli_5g', 'd_hope_5g', 'e_exci_5g', 'f_fail_5g', 'g_lone_5g', 'h_sad_5g', 'i_luck_5g', 'j_rela_5g', 
+                        #self-disclosure 14yo
+                        'ccr500', 'ccr501', 'ccr502', 'ccr510', 'ccr511', 'ccr512', 'ccr520', 'ccr521', 'ccr522', 'ccr523', 'ccr530', 'ccr531', 'ccr532', 'ccr533', 'ccr534', 'ccr535', 'ccr540', 'ccr550', 
+                        #sMFQ 16yo self-report
+                        'ccs4500', 'ccs4502', 'ccs4503', 'ccs4504', 'ccs4505', 'ccs4506', 'ccs4508', 'ccs4509', 'ccs4511', 'ccs4512', 'ccs4513', 'ccs4514', 'ccs4515', 
+                        #sMFQ 13yo self-report
+                        'ff6500', 'ff6502', 'ff6503', 'ff6504', 'ff6505', 'ff6506', 'ff6508', 'ff6509', 'ff6511', 'ff6512', 'ff6513', 'ff6514', 'ff6515', 
+                        'ccs6530', #self-harm
+                        'ccs6620', 'ccs6590', 'ccs6600', 'ccs6610', #suicide planning
+                        #K-SADS 14yo parent-report
+                        'tb7030', 'tb7031', 'tb7032', 'tb7033', 'tb7034', 'tb7035', 'tb7036', 'tb7037', 'tb7038', 'tb7039', 'tb7040', 'tb7041', 'tb7042',
+                        #demographic
+                        'Sex', 'Ethnicity', 'WeeklyIncome', 'MatDep', 'PartnerDep', 'MumEd'), as.numeric) 
+
+class(d$b_bore_5g)
+
+```
+
+# Data cleaning and wrangling
+
+```{r, include=FALSE}
+length(d$a_happ_5g)
+sum(is.na(d$a_happ_5g))
+
+# remove participants with missing memory data
+d_short <- d %>% filter(!(a_happ_5g == -9999))
+
+#code NA as NA
+d_short <- d_short %>% 
+  mutate(WeeklyIncome = na_if(WeeklyIncome, 11),
+         MatDep = na_if(MatDep, -9999),
+         famDep = case_when(MatDep == 1 ~ 1,
+                            PartnerDep == 1 | PartnerDep == 2 ~ 1,
+                            is.na(MatDep) & is.na(PartnerDep) ~ NA,
+                            .default = 0),
+         ccr540 = na_if(ccr540, 9),
+         ccr550 = na_if(ccr550, 9),
+         tb7031 = na_if(tb7031, 9),
+         tb7032 = na_if(tb7032, 9),
+         tb7033 = na_if(tb7033, 9),
+         tb7034 = na_if(tb7034, 9),
+         tb7035 = na_if(tb7035, 9),
+         tb7036 = na_if(tb7036, 9),
+         tb7037 = na_if(tb7037, 9),
+         tb7038 = na_if(tb7038, 9),
+         tb7039 = na_if(tb7039, 9),
+         tb7040 = na_if(tb7040, 9),
+         tb7041 = na_if(tb7041, 9),
+         tb7042 = na_if(tb7042, 9))
+```
+
+Internal consistency for support seeking questionnaire (order: female caregiver, male caregiver, parents, and total)
+
+```{r internal consistency, echo=FALSE}
+#Female, male and parent/caregiver sharing of experiences
+d_FCS <- data.frame(d$ccr500, d$ccr501, d$ccr502)
+d_MCS <- data.frame(d$ccr510, d$ccr511, d$ccr512)
+d_PS <- data.frame(d$ccr520, d$ccr521, d$ccr522, d$ccr523)
+d_totalsharing <-
+  data.frame(
+    d$ccr500,
+    d$ccr501,
+    d$ccr502,
+    d$ccr510,
+    d$ccr511,
+    d$ccr512,
+    d$ccr520,
+    d$ccr521,
+    d$ccr522,
+    d$ccr523
+  )
+
+#cronbach's alpha for the scale (using the psych package)
+psych::alpha(d_FCS)$total$std.alpha
+psych::alpha(d_MCS)$total$std.alpha
+psych::alpha(d_PS)$total$std.alpha
+psych::alpha(d_totalsharing)$total$std.alpha
+```
+
+## Re-coding
+```{r reversed coding, include=FALSE}
+#support seeking scale: higher score = more support seeking
+d_short <- d_short %>% mutate(rCcr500 = 5-ccr500,
+                              rCcr501 = 5-ccr501,
+                              rCcr502 = 5-ccr502,
+                              rCcr510 = 5-ccr510,
+                              rCcr511 = 5-ccr511,
+                              rCcr512 = 5-ccr512,
+                              rCcr520 = 6-ccr520,
+                              rCcr521 = 6-ccr521,
+                              rCcr522 = 6-ccr522,
+                              rCcr523 = 6-ccr523)
+```
+
+```{r reversed scoring of the MFQ age 13 and 16, include=FALSE}
+#mood and feeling questionnaire: higher score = more depression
+#age 16
+d_short <- d_short %>% mutate(rCcs4500 = 3- ccs4500,
+                              rCcs4502 = 3- ccs4502,
+                              rCcs4503 = 3- ccs4503,
+                              rCcs4504 = 3- ccs4504,
+                              rCcs4505 = 3- ccs4505,
+                              rCcs4506 = 3- ccs4506,
+                              rCcs4508 = 3- ccs4508,
+                              rCcs4509 = 3- ccs4509,
+                              rCcs4511 = 3- ccs4511,
+                              rCcs4512 = 3- ccs4512,
+                              rCcs4513 = 3- ccs4513,
+                              rCcs4514 = 3- ccs4514,
+                              rCcs4515 = 3- ccs4515)
+#age 13
+d_short <- d_short %>% mutate(rFf6500 = 3-ff6500,
+                              rFf6502 = 3-ff6502,
+                              rFf6503 = 3-ff6503,
+                              rFf6504 = 3-ff6504,
+                              rFf6505 = 3-ff6505,
+                              rFf6506 = 3-ff6506,
+                              rFf6508 = 3-ff6508,
+                              rFf6509 = 3-ff6509,
+                              rFf6511 = 3-ff6511,
+                              rFf6512 = 3-ff6512,
+                              rFf6513 = 3-ff6513,
+                              rFf6514 = 3-ff6514,
+                              rFf6515 = 3-ff6515)
+
+```
+
+```{r reverse coding for depressive symptoms at ~14yo}
+d_short <- d_short %>%
+  mutate(across(c(tb7030:tb7042), ~ 3 - .x, .names = "r{col}"))
+```
+
+```{r reverse code for self-harm and suicide, include=FALSE}
+# self-harm: 0 = has not hurt themself, 1 =  has hurt themself
+#suicide attempts: 0 = has not made plan before, 1 = has made plan before
+d_short <- d_short %>% mutate(
+  selfHarm = 2 - ccs6530,
+  Suicide = if_else(ccs6590 == 2 |
+                      ccs6600 == 2 | ccs6610 == 2 | ccs6620 == 2, 0, 1)
+)
+```
+
+```{r compute relevant variables, include=FALSE}
+#total scores on support seeking and MFQ at 13 and 16
+#higher MFQ = less depression symptoms
+#higher totalrSS = more support seeking
+#higher totalSS = less support seeking
+d_short <- d_short %>%
+  mutate (
+    totalrSS = rowSums(across(c(rCcr500:rCcr523))),
+    totalrSS = ifelse(totalrSS == 0, NA, totalrSS),
+    totalrMFQt2 = rowSums (across(c(rCcs4500:rCcs4515))),
+    totalrMFQt1 = rowSums(across(c(rFf6500:rFf6515))),
+    totaldep14 = rowSums (across(c(rtb7030:rtb7042))),
+    totaldep14 = ifelse(totaldep14 == 0, NA, totaldep14)
+  )
+```
+
+```{r calculate memory specificity, include=FALSE}
+#number of specific memories recalled (total)
+d_short <-
+  d_short %>% mutate(totalMem = rowSums(across (
+    c(
+      a_happ_5g,
+      b_bore_5g,
+      c_reli_5g,
+      d_hope_5g,
+      e_exci_5g,
+      f_fail_5g,
+      g_lone_5g,
+      h_sad_5g,
+      i_luck_5g,
+      j_rela_5g
+    )
+  ) == '4'))
+
+#number and proportion (out of 5) of specific positive and negative memories
+d_short <-
+  d_short %>% mutate(negMem = rowSums (across(
+    c(b_bore_5g, d_hope_5g, f_fail_5g, g_lone_5g, h_sad_5g)
+  ) == "4"),
+  posMem = rowSums(across(
+    c(a_happ_5g, c_reli_5g, e_exci_5g, i_luck_5g, j_rela_5g)
+  ) == "4"))
+```
+
+# Data Analysis - Pre-registered method (PROCESS)
+## Mediation model 1
+```{r Hyp 1}
+# reversed Support seeking mediation model Hypothesis 1
+process(
+  data = d_short,
+  y = "totalrMFQt2",
+  x = "totalMem",
+  m = "totalrSS",
+  cov = "totalrMFQt1",
+  total = 1,
+  stand = 1,
+  normal = 1,
+  model = 4,
+  seed = 10000,
+  progress = 0
+)
+```
+
+### Exploratory follow-up models
+
+```{r Hyp 1 follow-up}
+#negative memory -> reversed support seeking -> depression (reversed MFQ)
+process(
+  data = d_short,
+  y = "totalrMFQt2",
+  x = "negMem",
+  m = "totalrSS",
+  cov = "totalrMFQt1",
+  total = 1,
+  stand = 1,
+  normal = 1,
+  model = 4,
+  seed = 10000,
+  progress = 0
+)
+```
+
+```{r Hyp 1 follow-up2}
+#positive memory -> reversed support seeking -> depression (reversed MFQ)
+process(
+  data = d_short,
+  y = "totalrMFQt2",
+  x = "posMem",
+  m = "totalrSS",
+  cov = "totalrMFQt1",
+  total = 1,
+  stand = 1,
+  normal = 1,
+  model = 4,
+  seed = 10000,
+  progress = 0
+)
+```
+
+## Moderated Mediation model 3
+
+```{r, warning=F}
+#graph interactions of mediation models with sex
+ggplot(d_short) +
+  aes(x=totalMem, y=totalrSS, color = as.factor(Sex))+
+  geom_jitter(color = "grey")+
+  geom_smooth(method = "lm", data = filter(d_short, Sex == 1))+
+  geom_smooth(method = "lm", data = filter(d_short, Sex == 2))
+
+ggplot(d_short) +
+  aes(x=totalrSS, y=totalrMFQt2, color = as.factor(Sex))+
+  geom_jitter(color = "grey")+
+  geom_smooth(method = "lm", data = filter(d_short, Sex == 1))+
+  geom_smooth(method = "lm", data = filter(d_short, Sex == 2))
+```
+
+```{r Hyp 2}
+#regression models for Hyp 2
+mod1 <- d_short$Sex* d_short$totalMem
+mod2 <- d_short$Sex* d_short$totalrSS
+d_short <- data.frame(d_short, mod1, mod2)
+
+summary(lm(totalrMFQt2 ~ totalMem+totalrSS+Sex+mod1+mod2+totalrMFQt1, data = d_short))
+```
+
+```{r Hyp 2 2}
+#conditional process model
+# 1 = male, 2 = female
+process(
+  data = d_short,
+  y = "totalrMFQt2",
+  x = "totalMem",
+  m = "totalrSS",
+  w = "Sex",
+  cov = c("totalrMFQt1"),
+  total = 1,
+  normal = 1,
+  model = 58,
+  seed = 10000,
+  progress = 0
+)
+
+```
+
+## Mediation models 3
+```{r Hyp 3 - self-harm}
+process(
+  data = d_short,
+  y = "selfHarm",
+  x = "totalMem",
+  m = "totalrSS",
+  cov = c("totalrMFQt1", "totalrMFQt2"),
+  total = 1,
+  normal = 1,
+  model = 4,
+  seed = 10000,
+  progress = 0
+)
+```
+
+```{r calculating odds ratio}
+#self-harm ~ support seeking
+exp(-0.0441)
+exp(-0.0441+1.96*0.0087)
+exp(-0.0441-1.96*0.0087)
+
+exp(0.0342)
+exp(0.0342 + 1.96*0.0218)
+exp(0.0342 - 1.96*0.0218)
+
+#suicide planning ~ support seeking
+#b path
+exp(-0.0417)
+exp(-0.0417+1.96*0.0161)
+exp(-0.0417-1.96*0.0161)
+# direct effect
+exp(0.0735)
+exp(0.0735+1.96*0.0439)
+exp(0.0735-1.96*0.0439)
+
+```
+
+```{r Hyp 3 - suicide}
+process(
+  data = d_short,
+  y = "Suicide",
+  x = "totalMem",
+  m = "totalrSS",
+  cov = c("totalrMFQt1", "totalrMFQt2"),
+  total = 1,
+  normal = 1,
+  model = 4,
+  seed = 10000,
+  progress = 0
+)
+
+```
+
+# Using MICE and lavaan 
+```{r}
+#make a dataset with relevant variables only
+data <- d_short[, c(2:6, 82, 132:136, 138:140)]
+
+data <-
+  data %>% mutate_at(
+    c(
+      "Sex",
+      "Ethnicity",
+      "MumEd",
+      "WeeklyIncome",
+      "famDep",
+      "selfHarm",
+      "Suicide"
+    ),
+    as.factor
+  )
+
+aggr_plot <-
+  aggr(
+    data,
+    col = c('skyblue', 'lightpink'),
+    numbers = TRUE,
+    sortVars = TRUE,
+    labels = names(data),
+    cex.axis = .7,
+    gap = 3,
+    ylab = c("Histogram of missing data", "Pattern")
+  )
+
+naniar::prop_miss(data [,-c(13, 14)])
+```
+## MICE
+```{r}
+# imp_method = c(
+#   "logreg",
+#   "polyreg",
+#   "pmm",
+#   "polyreg",
+#   "polyreg",
+#   "logreg",
+#   "logreg",
+#   "logreg",
+#   "pmm",
+#   "pmm",
+#   "pmm",
+#   "pmm",
+#   "pmm",
+#   "pmm"
+# )
+# 
+# d_imp <- mice(data,
+#               m = 20,
+#               method = imp_method,
+#               seed = 3108)
+# print(d_imp)
+# write.mice.imputation(d_imp, name = "d_imp_save", mids2spss = F)
+```
+
+```{r}
+load("d_imp_save/d_imp_save.Rdata")
+d_imp = mi.res
+```
+
+```{r}
+#checking imp datasets
+bwplot(d_imp)
+densityplot(d_imp)
+xyplot(d_imp, selfHarm ~ totalrSS | as.factor(.imp))
+xyplot(d_imp, Suicide ~ totalrSS | as.factor(.imp))
+```
+
+```{r create imputed dataframe}
+imp.df <- datlist_create(d_imp)
+corr_mice <- micombine.cor(d_imp, variables = c(3,9:14))
+```
+
+##Fitting mediation model 1
+```{r, warning=F}
+#specify mediation model
+med1 <- '
+totalrMFQt2 ~ c*totalMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrSS ~ a*totalMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrMFQt2 ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all imp datasets
+imp.med.model1 <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(med1,
+          ordered = c("WeeklyIncome", "famDep", "Sex"),
+          data = data)
+    return(res)
+  }
+)
+
+#extract relevant parameters for imp datasets
+results.imp.med.model1 <- testEstimates(imp.med.model1)
+print(results.imp.med.model1, digits = 4)
+confint.mitml.testEstimates(results.imp.med.model1)
+
+#apply same model for completed dataset
+com.med.model1 <- sem(model = med1, data = d_short)
+summary(com.med.model1)
+```
+
+### Follow-up models with memory valence
+```{r, warning=F}
+#specify mediation model with positive mem
+med1a <- '
+totalrMFQt2 ~ c*posMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrSS ~ a*posMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrMFQt2 ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+imp.med.model1a <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(med1a,
+          ordered = c("WeeklyIncome", "famDep", "Sex"),
+          data = data)
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model1a <- testEstimates(imp.med.model1a)
+print(results.imp.med.model1a, digits = 4)
+
+#apply same model for completed dataset
+com.med.model1a <-
+  sem(
+    model = med1a,
+    ordered = c("WeeklyIncome", "famDep", "Sex"),
+    data = d_short
+  )
+summary(com.med.model1a)
+
+```
+
+```{r, warning=F}
+#specify mediation model with negative mem
+med1b <- '
+totalrMFQt2 ~ c*negMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrSS ~ a*negMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrMFQt2 ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+imp.med.model1b <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(med1b,
+          ordered = c("WeeklyIncome", "famDep", "Sex"),
+          data = data)
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model1b <- testEstimates(imp.med.model1b)
+print(results.imp.med.model1b, digits = 4)
+
+#apply same model for completed dataset
+com.med.model1b <-
+  sem(
+    model = med1b,
+    ordered = c("WeeklyIncome", "famDep", "Sex"),
+    data = d_short
+  )
+summary(com.med.model1b)
+
+```
+
+## Moderated mediation model
+```{r}
+#make interaction terms for model 2
+##imputed dataset
+sexSS <- function(data) {
+  data$sexSS = as.numeric(data$Sex) * data$totalrSS
+  return(data)
+}
+
+sexMem <- function(data) {
+  data$sexMem = as.numeric(data$Sex) * data$totalMem
+  return(data)
+}
+
+imp.df <- lapply(imp.df, sexSS)
+imp.df <- lapply(imp.df, sexMem)
+##complete case dataset
+d_short <- d_short %>% mutate(sexSS = as.numeric(Sex) * totalrSS,
+                              sexMem = as.numeric(Sex) * totalMem)
+```
+
+```{r, warning=F}
+mod.med2 <- '
+totalrMFQt2 ~ b1*totalrSS + b2*Sex + b3*sexSS + cprime*totalMem + IQ + totalrMFQt1 + famDep + WeeklyIncome
+totalrSS ~ a1*totalMem + a2*Sex + a3*sexMem + IQ + totalrMFQt1 + famDep + WeeklyIncome
+
+
+# index of moderated mediation
+IndModMed1:= a1*b3+a3*b1
+IndModMed2:= a3*b3
+
+
+# simple slope of totalrSS on totalMem is a1+a3*Sex
+aMale: = a1+a3*1
+aFemale: = a1+a3*2
+
+
+# simple slope of totalrMFQt2 on totalSS is b1+b3*Sex
+bMale: = b1+b3*1
+bFemale: = b1+b3*2
+
+
+# conditional indirect effects is a*(b1+b3*Sex)
+abMale: = aMale*bMale
+abFemale: = aFemale*bFemale
+'
+
+imp.mod.med.model2 = lapply(
+  imp.df,
+  FUN = function(data) {
+    res = sem(mod.med2,
+              data = data,
+              ordered = c("WeeklyIncome", "famDep"))
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.mod.med.model2 <- testEstimates(imp.mod.med.model2)
+print(results.imp.mod.med.model2, digits = 4)
+
+#apply same model for completed dataset
+com.mod.med.model2 <-
+  sem(
+    model = mod.med2,
+    ordered = c("WeeklyIncome", "famDep"),
+    data = d_short
+  )
+summary(com.mod.med.model2)
+```
+
+## Mediation models with behavioural outcomes
+```{r self-harm, warning=F}
+# mediation model with self-harm
+med3a <- '
+selfHarm ~ c*totalMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*totalMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+selfHarm ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model3a <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med3a,
+        ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model3a <- testEstimates(med.imp.model3a)
+print(results.imp.med.model3a, digits = 4)
+confint.mitml.testEstimates(results.imp.med.model3a)
+exp(-0.141) #OR b path
+exp(-0.141 + 1.96 * 0.051)
+exp(-0.141 - 1.96 * 0.051)
+exp(0.018)  #OR c'
+exp(0.018 + 1.96 * 0.013)
+exp(0.018 - 1.96 * 0.013)
+
+
+#apply same model for completed dataset
+com.med.model3a <-
+  sem(
+    model = med3a,
+    ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+    data = d_short
+  )
+summary(com.med.model3a)
+```
+
+```{r suicide, warning=F}
+# mediation model with suicide planning
+med3b <- '
+Suicide ~ c*totalMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*totalMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+Suicide ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model3b <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med3b,
+        ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model3b <- testEstimates(med.imp.model3b)
+print(results.imp.med.model3b, digits = 4)
+exp(-0.035) #OR b path
+exp(-0.035 + 1.96 * 0.045)
+exp(-0.035 - 1.96 * 0.045)
+exp(0.039)  #OR c' path
+exp(0.039 + 1.96 * 0.018)
+exp(0.039 - 1.96 * 0.018)
+
+
+#apply same model for completed dataset
+com.med.model3b <-
+  sem(
+    model = med3b,
+    ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+    data = d_short
+  )
+summary(com.med.model3b)
+```
+##exploratory model with memory valence for suicide planning
+
+```{r, warning = F}
+#positive mem
+med4a <- '
+Suicide ~ c*posMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*posMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+Suicide ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model4a <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med4a,
+        ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model4a <- testEstimates(med.imp.model4a)
+print(results.imp.med.model4a)
+
+#apply same model for completed dataset
+com.med.model4a <-
+  sem(
+    model = med4a,
+    ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+    data = d_short
+  )
+summary(com.med.model4a)
+```
+
+```{r, warning=F}
+#negative mem
+med4b <- '
+Suicide ~ c*negMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*negMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+Suicide ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model4b <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med4b,
+        ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model4b <- testEstimates(med.imp.model4b)
+print(results.imp.med.model4b)
+
+#apply same model for completed dataset
+com.med.model4b <-
+  sem(
+    model = med4b,
+    ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+    data = d_short
+  )
+summary(com.med.model4b)
+```
+
+```{r, warning=FALSE}
+#regression models
+##negative memory
+reg1 <- '
+Suicide ~ negMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+'
+
+#apply simultaneously to all datasets
+reg.imp.model1 <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        reg1,
+        ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.reg.model1 <- testEstimates(reg.imp.model1)
+print(results.imp.reg.model1, digits = 4)
+exp(0.079)
+exp(0.079 + 1.96 * 0.030)
+exp(0.079 - 1.96 * 0.030)
+
+#apply same model for completed dataset
+com.reg.model1 <-
+  sem(
+    model = reg1,
+    ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+    data = d_short
+  )
+summary(com.reg.model1)
+```
+
+```{r, warning=FALSE}
+#regression models
+##positive memory
+reg2 <- '
+Suicide ~ posMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+'
+
+#apply simultaneously to all datasets
+reg.imp.model2 <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        reg2,
+        ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.reg.model2 <- testEstimates(reg.imp.model2)
+print(results.imp.reg.model2, digits = 4)
+exp(0.031)
+exp(0.031 + 1.96 * 0.031)
+exp(0.031 - 1.96 * 0.031)
+
+#apply same model for completed dataset
+com.reg.model2 <-
+  sem(
+    model = reg2,
+    ordered = c("WeeklyIncome", "famDep", "Suicide", "Sex"),
+    data = d_short
+  )
+summary(com.reg.model2)
+```
+
+```{r}
+d_short %>% ggplot(mapping = aes(x = as.factor(Suicide), y = totalMem)) +
+  geom_jitter()
+
+d_short %>% ggplot(mapping = aes(x = as.factor(Suicide), y = negMem)) +
+  geom_jitter() +
+  geom_violin()
+
+d_short %>% ggplot(mapping = aes(x = as.factor(Suicide), y = posMem)) +
+  geom_jitter()
+
+```
+
+##exploratory model with memory valence for self-harm
+```{r, warning=F}
+#positive mem
+med5a <- '
+selfHarm ~ c*posMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*posMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+selfHarm ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model5a <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med5a,
+        ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model5a <- testEstimates(med.imp.model5a)
+print(results.imp.med.model5a, digits = 4)
+
+#apply same model for completed dataset
+com.med.model5a <-
+  sem(
+    model = med5a,
+    ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+    data = d_short
+  )
+summary(com.med.model5a)
+```
+
+```{r, warning = F}
+#negative mem
+med5b <- '
+selfHarm ~ c*negMem + Sex + IQ + totalrMFQt1 + totalrMFQt2 + famDep + WeeklyIncome
+totalrSS ~ a*negMem + Sex + IQ + totalrMFQt1 + famDep + WeeklyIncome
+selfHarm ~ b*totalrSS
+ab :=  a*b
+total := c + (a*b)
+'
+
+#apply simultaneously to all datasets
+med.imp.model5b <- lapply(
+  imp.df,
+  FUN = function(data) {
+    res <-
+      sem(
+        med5b,
+        ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+        data = data
+      )
+    return(res)
+  }
+)
+
+#extract relevant parameters
+results.imp.med.model5b <- testEstimates(med.imp.model5b)
+print(results.imp.med.model5b, digits = 4)
+
+#apply same model for completed dataset
+com.med.model5b <-
+  sem(
+    model = med5b,
+    ordered = c("WeeklyIncome", "famDep", "selfHarm", "Sex"),
+    data = d_short
+  )
+summary(com.med.model5b)
+```
+
+# Descriptive statistics
+```{r}
+data = d_short[, c(1:6, 82, 132:140)]
+data = data %>%
+  mutate(across(
+    c(
+      "famDep",
+      "Sex",
+      "Ethnicity",
+      "MumEd",
+      "WeeklyIncome",
+      "selfHarm",
+      "Suicide"
+    ),
+    as.factor
+  ))
+
+summary_stats <- sapply(data, function(x) {
+  if (is.numeric(x)) {
+    stats <- c(
+      mean = mean(x, na.rm = TRUE),
+      sd = sd(x, na.rm = TRUE),
+      n = sum(!is.na(x))
+    )
+  } else {
+    freq <- table(x)
+    percent <- freq / 5785 * 100
+    stats <- cbind(freq, percent)
+  }
+  return(stats)
+})
+
+d_scIncome <-
+  data %>% count(WeeklyIncome, name = 'N') %>% mutate (perc = N / 5785 * 100)
+
+d_scIncomeSum <-
+  d_scIncome %>% mutate(economicDisadvantage = if_else(as.numeric(WeeklyIncome) < 4, "yes", "no")) %>%
+  group_by(economicDisadvantage) %>% summarise(n = sum(N), prop = sum(perc)) %>% ungroup
+```
+
+## Exploring data patterns
+
+Checking MFQ at 13 for participants who continued vs those who did not
+
+```{r missing data, echo=FALSE}
+#compute missing data in MFQt2
+data <- data %>% mutate(naMFQ = if_else(is.na(totalrMFQt2), 0, 1))
+#t.test(formula = totalMem ~ naMFQ, data = d_short)
+missing_MFQ <-
+  t.test(formula = totalrMFQt1 ~ naMFQ,
+         data = data,
+         exact = TRUE)
+print(missing_MFQ)
+missing_MFQ$p.value
+missing_MFQ$estimate / sqrt(missing_MFQ$parameter + 1) # cohen's d
+```
+
+```{r descriptive stats}
+#correlation matrix between study variables
+data.cor = data[, c(
+  "Sex",
+  "Ethnicity",
+  "MumEd",
+  "famDep",
+  "WeeklyIncome",
+  "IQ",
+  "totalMem",
+  "posMem",
+  "negMem",
+  "totalrMFQt1",
+  "totalrSS",
+  "totalrMFQt2",
+  "selfHarm",
+  "Suicide"
+)]
+cormatrix  <- rcorr(as.matrix(data.cor))
+cormatrix$r
+cormatrix$P
+
+n.var = sapply(data.cor, function(x)
+  sum(!is.na(x)))
+n.var
+```
+
+```{r checking linearity}
+summary(lm(totalrMFQt2 ~ totalrSS, d_short))
+summary(lm(totalrMFQt2 ~ totalrSS + totalMem, d_short))
+
+d_short %>% ggplot(mapping = aes(x = totalMem, y = totalrSS)) +
+  geom_jitter(size = 0.5, na.rm = TRUE) + theme_classic()
+
+d_short %>% ggplot(mapping = aes(x = totalrSS, y = totalrMFQt2)) +
+  geom_jitter(size = 0.5, na.rm = TRUE) + theme_classic()
+
+d_short %>% ggplot(mapping = aes(x = as.factor(selfHarm), y = totalrMFQt2)) +
+  geom_violin() + theme_classic()
+```
